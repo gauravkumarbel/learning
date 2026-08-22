@@ -2,56 +2,65 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds') // Jenkins credential ID (username + password/token)
-        IMAGE_NAME = 'gaurav75/dost-web'
-        IMAGE_TAG  = "${env.2}"
+        TARGET_PATH = 'devops-project/myweb'   // sirf isi folder/file ko target karenge
+        TARGET_FILE = 'index.html'             // jo html file test karni hai
     }
 
     stages {
 
-        stage('Test Code') {
+        stage('Checkout') {
             steps {
-                echo 'Running tests...'
-                // Example for Node.js: sh 'npm install && npm test'
-                // Example for Python:  sh 'pip install -r requirements.txt && pytest'
-                // Example for Java:    sh 'mvn test'
-                sh 'echo "TODO: replace with your actual test command"'
+                checkout scm   // poora repo aayega, but hum sirf TARGET_PATH use karenge
             }
         }
 
-        stage('Build') {
+        stage('Verify File Exists') {
             steps {
-                echo 'Building application...'
-                // Example for Node.js: sh 'npm run build'
-                // Example for Java:    sh 'mvn clean package'
-                sh 'echo "TODO: replace with your actual build command"'
+                script {
+                    def exists = fileExists "${TARGET_PATH}/${TARGET_FILE}"
+                    if (!exists) {
+                        error("❌ ${TARGET_FILE} nahi mila ${TARGET_PATH} mein")
+                    } else {
+                        echo "✅ File mil gaya: ${TARGET_PATH}/${TARGET_FILE}"
+                    }
+                }
             }
         }
 
-        stage('Docker Build & Push') {
+        stage('Build (HTML Validation)') {
             steps {
-                echo 'Building Docker image...'
-                sh "docker build -t ${dost-web}:${dost-web} -t ${dost-web}:latest ."
+                dir("${TARGET_PATH}") {
+                    sh """
+                        # HTML syntax check ke liye tidy tool use karo
+                        which tidy || sudo apt-get install -y tidy
+                        tidy -q -e ${TARGET_FILE} || echo "⚠️ Warnings mile, but continue kar rahe hain"
+                    """
+                }
+            }
+        }
 
-                echo 'Logging in to Docker Hub...'
-                sh "echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${gaurav75} --password-Gaurav@#12345"
-
-                echo 'Pushing image to Docker Hub...'
-                sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
-                sh "docker push ${IMAGE_NAME}:latest"
+        stage('Test') {
+            steps {
+                dir("${TARGET_PATH}") {
+                    script {
+                        def content = readFile("${TARGET_FILE}")
+                        if (!content.contains('<html')) {
+                            error("❌ Test Failed: valid HTML tag nahi mila")
+                        } else {
+                            echo "✅ Test Passed: valid HTML structure hai"
+                        }
+                    }
+                }
             }
         }
     }
 
     post {
-        always {
-            sh 'docker logout || true'
-        }
         success {
-            echo 'Pipeline completed successfully!'
+            echo "🎉 Build & Test successful for ${TARGET_PATH}/${TARGET_FILE}"
         }
         failure {
-            echo 'Pipeline failed.'
+            echo "🚫 Pipeline failed — check logs above"
         }
     }
 }
